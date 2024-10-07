@@ -63,8 +63,8 @@ pipeline{
         }
         stage('Deploy Staging'){
             agent {
-                docker {
-                    image 'node:22-alpine'
+                 docker {
+                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                     reuseNode true
                 }
             }
@@ -76,15 +76,27 @@ pipeline{
                     node_modules/.bin/netlify status
                     node_modules/.bin/netlify deploy --dir=build --json > deploy-output.json
                     node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json
+                    CI_ENVIRONMENT_URL = $(node_modules/.bin/node-jq -r '.deploy_url' deploy-output.json)
+                    npx playwright test --reporter=html
                 '''
+            }
+        }
+        stage('Approval'){
+            steps{
+                timeout(unit: 15,unit: 'MINUTES'){
+                        input message: 'Do you wish to deploy to production?', ok: 'Yes, I am sure!'
+                }
             }
         }
         stage('Deploy Prod'){
             agent {
                 docker {
-                    image 'node:22-alpine'
+                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                     reuseNode true
                 }
+            }
+            environment {
+                CI_ENVIRONMENT_URL = 'https://storied-genie-beb5a1.netlify.app'
             }
             steps{
                 sh'''
@@ -93,39 +105,15 @@ pipeline{
                     echo "Deploying to production. Site ID : $NETLIFY_SITE_ID"
                     node_modules/.bin/netlify status
                     node_modules/.bin/netlify deploy --dir=build --prod
-                '''
-            }
-        }
-        stage('Approval'){
-            steps{
-                timeout(15){
-                        input message: 'Do you wish to deploy to production?', ok: 'Yes, I am sure!'
-                }
-            }
-        }
-        stage('Prod E2E'){
-            agent {
-                docker {
-                    image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
-                    reuseNode true
-                }
-            }
-
-            environment {
-                CI_ENVIRONMENT_URL = 'https://storied-genie-beb5a1.netlify.app'
-            }
-            steps{
-                sh '''
                     npx playwright test --reporter=html
                 '''
             }
+            post {
+                always{
+                    junit 'jest-results/junit.xml'
+                    publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'Staging-report', reportFiles: 'index.html', reportName: 'Playwright HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+                }
+            }
         } 
-    }
-
-    post {
-        always{
-            junit 'jest-results/junit.xml'
-            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright HTML Report', reportTitles: '', useWrapperFileDirectly: true])
-        }
     }
 }
