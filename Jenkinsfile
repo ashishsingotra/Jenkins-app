@@ -68,6 +68,9 @@ pipeline{
                     reuseNode true
                 }
             }
+            environment {
+                CI_ENVIRONMENT_URL = 'STAGING_URL'
+            }
             steps{
                 sh'''
                     npm install netlify-cli node-jq
